@@ -1,0 +1,208 @@
+import pandas as pd
+import re
+from collections import defaultdict
+from os import listdir
+
+"""
+PROPER ORDER?
+
+Tumor Necrosis Factor - alpha
+interleukin 2
+interleukin 2 receptor cd 25 soluble
+interleukin 12
+interferon gamma
+interleukin 4
+interleukin 5
+interleukin 10
+interleukin 13
+interleukin 17
+interleukin 1 beta
+interleukin 6
+interleukin 8
+"""
+
+
+
+regex_dict = {
+"Tumor Necrosis Factor": 
+    [["Tumor Necrosis Factor - (?:alpha )*([<0-9.]+) ([hfl ]*)(pg/mL) ([><=0-9.-]+)(?: alpha)*",
+    "TNF (?:alpha )*([<0-9.]+) ([h ]*)(pg/mL) ([><=0-9.-]+)(?: alpha)*"],
+     ["Tumor Necrosis Factor","TNF"]],
+"Interleukin 2":
+    [["Interleukin 2 (?:alpha )*([<0-9.]+) ([h ]*)(pg/mL) ([><=0-9.-]+)(?: alpha)*",
+      "IL-2 (?:alpha )*([<0-9.]+) ([h ]*)(pg/mL) ([><=0-9.-]+)(?: alpha)*",
+      "IL 2 (?:alpha )*([<0-9.]+) ([h ]*)(pg/mL) ([><=0-9.-]+)(?: alpha)*"],
+    ["Interleukin 2","IL-2","IL 2"]],
+"Interleukin 2 Receptor Soluble":
+    [["Interleukin 2 Receptor CD25 (?:alpha )*([<0-9.]+) ([h ]*)(pg/mL) ([><=0-9.-]+)(?: alpha)*",
+      "IL 2 Receptor \(CD25\), Soluble (?:alpha )*([<0-9.]+) ([h ]*)(pg/mL) ([><=0-9.-]+)(?: alpha)*",
+      "IL-2 receptor (?:alpha)* soluble ([<0-9.]+) ([h ]*)(pg/mL) ([><=0-9.-]+)(?:alpha)*",
+      "IL 2 Receptor, Soluble ([<0-9.]+) ([h ]*)(pg/mL) ([><=0-9.-]+)(?:alpha)*",
+      "IL 2 Receptor, Soluble ([<0-9.]+) ([h ]*)(pg/mL) Reference Value: ([><=0-9.-]+)",
+      "IL 2 Receptor \(CD25\), Soluble Result: ([<0-9.]+) ([h ]*)(pg/mL) Reference Value: ([><=0-9.-]+)"],
+     ["Interleukin 2 Receptor CD25 Soluble","IL 2 Receptor (CD25), Soluble","IL-2 receptor soluble","IL 2 Receptor, Soluble","IL 2 Receptor, Soluble","IL 2 Receptor (CD25), Soluble"]],
+"Interleukin 12":
+    [["Interleukin 12 ([<0-9.]+) ([h ]*)(pg/mL) ([><=0-9.-]+)(?:alpha)*",
+      "IL-12 ([<0-9.]+) ([h ]*)(pg/mL) ([><=0-9.-]+)(?:alpha)*",
+      "IL 12 ([<0-9.]+) ([h ]*)(pg/mL) ([><=0-9.-]+)(?:alpha)*"],
+     ["Interleukin 12","IL-12","IL 12"]],
+"Interferon gamma":
+    [["Interferon gamma ([<0-9.]+) ([h ]*)(pg/mL) ([><=0-9.-]+)(?:alpha)*",
+     "IFN-gamma ([<0-9.]+) ([h ]*)(pg/mL) ([><=0-9.-]+)(?:alpha)*",
+     "IFN gamma ([<0-9.]+) ([h ]*)(pg/mL) ([><=0-9.-]+)(?:alpha)*"],
+    ["Interferon gamma","IFN-gamma","IFN gamma"]],
+"Interleukin 4":
+    [["Interleukin 4 ([<0-9.]+) ([h ]*)(pg/mL) ([><=0-9.-]+)(?:alpha)*",
+      "IL-4 ([<0-9.]+) ([h ]*)(pg/mL) ([><=0-9.-]+)(?:alpha)*",
+      "IL 4 ([<0-9.]+) ([h ]*)(pg/mL) ([><=0-9.-]+)(?:alpha)*"],
+     ["Interleukin 4","IL-4","IL 4"]],
+"Interleukin 5":
+    [["Interleukin 5 ([<0-9.]+) ([h ]*)(pg/mL) ([><=0-9.-]+)(?:alpha)*",
+      "IL-5 ([<0-9.]+) ([h ]*)(pg/mL) ([><=0-9.-]+)(?:alpha)*",
+      "IL 5 ([<0-9.]+) ([h ]*)(pg/mL) ([><=0-9.-]+)(?:alpha)*"],
+    ["Interleukin 5","IL-5","IL 5"]],
+"Interleukin 10":
+    [["Interleukin 10 ([<0-9.]+) ([h ]*)(pg/mL) ([><=0-9.-]+)(?:alpha)*",
+     "IL-10 ([<0-9.]+) ([h ]*)(pg/mL) ([><=0-9.-]+)(?:alpha)*",
+     "IL 10 ([<0-9.]+) ([h ]*)(pg/mL) ([><=0-9.-]+)(?:alpha)*"],
+     ["Interleukin 10","IL-10","IL 10"]],
+"Interleukin 13":
+    [["Interleukin 13 ([<0-9.]+) ([h ]*)(pg/mL) ([><=0-9.-]+)(?:alpha)*"
+      "IL-13 ([<0-9.]+) ([h ]*)(pg/mL) ([><=0-9.-]+)(?:alpha)*",
+      "IL 13 ([<0-9.]+) ([h ]*)(pg/mL) ([><=0-9.-]+)(?:alpha)*"],
+     ["Interleukin 13","IL-13","IL 13"]],
+"Interleukin 17":
+    [["Interleukin 17 ([<0-9.]+) ([h ]*)(pg/mL) ([><=0-9.-]+)(?:alpha)*",
+      "IL-17 ([<0-9.]+) ([h ]*)(pg/mL) ([><=0-9.-]+)(?:alpha)*",
+      "IL 17 ([<0-9.]+) ([h ]*)(pg/mL) ([><=0-9.-]+)(?:alpha)*"],
+     ["Interleukin 17","IL-17","IL 17"]],
+"Interleukin 1 beta":
+    [["Interleukin 1 beta ([<0-9.]+) ([h ]*)(pg/mL) ([><=0-9.-]+)(?:alpha)*",
+     "IL-1 beta ([<0-9.]+) ([h ]*)(pg/mL) ([><=0-9.-]+)(?:alpha)*",
+     "IL 1 beta ([<0-9.]+) ([h ]*)(pg/mL) ([><=0-9.-]+)(?:alpha)*"],
+     ["Interleukin 1 beta","IL-1 beta","IL 1 beta"]],
+"Interleukin 6":
+    [["Interleukin 6 ([<0-9.]+) ([h ]*)(pg/mL) ([><=0-9.-]+)(?:alpha)*",
+     "IL-6 ([<0-9.]+) ([h ]*)(pg/mL) ([><=0-9.-]+)(?:alpha)*",
+     "IL 6 ([<0-9.]+) ([h ]*)(pg/mL) ([><=0-9.-]+)(?:alpha)*"],
+     ["Interleukin 6","IL-6","IL 6"]],
+"Interleukin 8":
+    [["Interleukin 8 ([<0-9.]+) ([h ]*)(pg/mL) ([><=0-9.-]+)(?:alpha)*",
+     "IL-8 ([<0-9.]+) ([h ]*)(pg/mL) ([><=0-9.-]+)(?:alpha)*",
+     "IL 8 ([<0-9.]+) ([h ]*)(pg/mL) ([><=0-9.-]+)(?:alpha)*"],
+     ["Interleukin 8","IL-8","IL 8"]],
+"IFN-beta":
+    [["IFN-beta ([<0-9.]+) ([h ]*)(pg/mL) ([><=0-9.-]+)(?:alpha)*",
+      "IFN beta ([<0-9.]+) ([h ]*)(pg/mL) ([><=0-9.-]+)(?:alpha)*",
+     "Interferon beta ([<0-9.]+) ([h ]*)(pg/mL) ([><=0-9.-]+)(?:alpha)*"],
+     ["IFN-beta","IFN beta","Interferon beta"]],
+"MCP-1":
+    [["MCP-1 ([<0-9.]+) ([h ]*)(pg/mL) ([><=0-9.-]+)(?:alpha)*",
+      "MCP 1 ([<0-9.]+) ([h ]*)(pg/mL) ([><=0-9.-]+)(?:alpha)*"],
+     ["MCP-1","MCP 1"]],
+"MCP-1 alpha":
+    [["MIP-1 alpha ([<0-9.]+) ([h ]*)(pg/mL) ([><=0-9.-]+)(?:alpha)*",
+      "MIP 1 alpha ([<0-9.]+) ([h ]*)(pg/mL) ([><=0-9.-]+)(?:alpha)*"],
+     ["MIP-1 alpha","MIP 1 alpha"]],
+"GM-CSF":
+    [["GM-CSF ([<0-9.]+) ([h ]*)(pg/mL) ([><=0-9.-]+)(?:alpha)*"],
+     ["GM-CSF"]],
+"IFN-alpha":
+    [["IFN-alpha ([<0-9.]+) ([h ]*)(pg/mL) ([><=0-9.-]+)(?:alpha)*",
+      "IFN alpha ([<0-9.]+) ([h ]*)(pg/mL) ([><=0-9.-]+)(?:alpha)*",
+     "Interferon alpha ([<0-9.]+) ([h ]*)(pg/mL) ([><=0-9.-]+)(?:alpha)*"],
+     ["IFN-alpha","IFN alpha","Interferon alpha"]],
+"IL-18":
+    [["Interleukin 18 ([<0-9.]+) ([h ]*)(pg/mL) ([><=0-9.-]+)(?:alpha)*",
+     "IL-18 ([<0-9.]+) ([h ]*)(pg/mL) ([><=0-9.-]+)(?:alpha)*",
+     "IL 18 ([<0-9.]+) ([h ]*)(pg/mL) ([><=0-9.-]+)(?:alpha)*"],
+     ["Interleukin 18","IL-18","IL 18"]],
+    }
+
+    
+def start():
+    filepick = pick_file_from_directory()
+    df = pd.read_excel(filepick)
+    textlist = [' '.join(x.split()) for x in df['Full Text Result'].tolist()]
+    return df,textlist
+
+def pick_file_from_directory():
+    #Prints numbered list of files in local directory. User types number to return string of file name.
+    for x in listdir():
+        print("{} --- {}".format(listdir().index(x)+1,x))  
+    file_index = input("Type number of desired file:  ")    
+    return listdir()[int(file_index)-1]
+
+def reg_match(text,dict_col):
+    regex = dict_col[0]
+    for count, x in enumerate(regex):
+        match = re.search(x, text)
+        if match != None:
+            matchlist = [match.group(x) for x in range(1,5)]
+            matchlist.append(dict_col[1][count])
+            return matchlist
+    return ["","","","",""]
+
+def build_dict(txtlist,col):
+    mastertxtlist = []
+    for txt in txtlist:
+        resultlist = reg_match(txt,regex_dict[col])
+        mastertxtlist.append(resultlist)
+
+    r0 = [row[0] for row in mastertxtlist]
+    r1 = [row[1] for row in mastertxtlist]
+    r2 = [row[2] for row in mastertxtlist]
+    r3 = [row[3] for row in mastertxtlist]
+    r4 = [row[4] for row in mastertxtlist]
+
+    ## CODE TO CAPTURE WEIRD FLAGS LIKE >>>FLAG:HIGH<<< BY COMPARING THE RANGE AND VALUE
+    for count,rng in enumerate(r3):
+        regex_code = "([<0-9.]*)[><=-]+([<0-9.]+)"        
+        match = re.search(regex_code, rng)
+        if match != None:
+           # resultstring = match.group(2)
+            rangestring = match.group(2).replace("<", "")
+            valuestring = r0[count].replace("<", "")
+
+            if float(valuestring) > float(rangestring):
+                r1[count] = "h"
+
+    txtdict = {
+        col+"_Search_Terms": r4
+        ,col+"_Value": r0
+        ,col+"_Flag": r1
+        ,col+"_UoM": r2
+        ,col+"_Range": r3
+        }   
+    return pd.DataFrame.from_dict(txtdict)
+
+def df_concat(main_df,new_df):
+    df = pd.concat([main_df,new_df])
+    return df
+
+def increment_file_name_output(output_label="Working_Py_Output",suffix=".csv"):
+    #Creates numbered file name for script to produce. If name exists in local directory, will increment number and try again.
+    #Requires the 'from os import listdir' library 
+    version_count = 1
+    while True:
+        proposed_file_name = output_label+"_v"+str(version_count)+suffix
+        if proposed_file_name in listdir():
+            version_count += 1
+        else:
+            return proposed_file_name
+    
+#MAIN CODE
+df,textlist = start()
+
+
+for col in regex_dict:
+    txtdf = build_dict(textlist,col)
+    df = pd.concat([df,txtdf],axis=1)
+
+
+df = df.sort_values(by=['Display_name','Collected Date Time'], ascending=(True, False))
+
+fileoutput = increment_file_name_output()
+
+print(fileoutput)
+df.to_csv(fileoutput,index=False)
